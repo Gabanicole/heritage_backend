@@ -1,30 +1,50 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
 
-const userSchema = mongoose.Schema(
-  {
-    username: {
-      type: String,
-      required: [true, "Please add the user name"],
-      unique: [true, "Username alreday used"]
-    },
-    email: {
-      type: String,
-      required: [true, "Please add the user email address"],
-      unique: [true, "Email address already taken"],
-    },
-    password: {
-      type: String,
-      required: [true, "Please add the user password"],
-    },
-      role: {
-        type: String,
-        default: guest,
-        enum: ["guest", "elders", "agent1","agent2","agent3","manager", "admin"],
-      }, 
+const userSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    unique: true
   },
-  {
-    timestamps: true,
+  password: {
+    type: String,
+    required: true
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  role: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Role',
+    required: true
   }
-);
+});
 
-module.exports = mongoose.model("User", userSchema);
+userSchema.pre('save', function(next) {
+  if (!this.isModified('password')) {
+    return next();
+  }
+  bcrypt.hash(this.password, 10, (err, hashedPassword) => {
+    if (err) {
+      return next(err);
+    }
+    this.password = hashedPassword;
+    next();
+  });
+});
+
+userSchema.methods.comparePassword = function(candidatePassword, callback) {
+  bcrypt.compare(candidatePassword, this.password, (err, isMatch) => {
+    if (err) {
+      return callback(err);
+    }
+    callback(null, isMatch);
+  });
+};
+
+const User = mongoose.model('User', userSchema);
+
+module.exports = User;
