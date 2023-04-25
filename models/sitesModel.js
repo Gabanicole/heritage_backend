@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 const siteSchema = mongoose.Schema({
-    user
+    
     name:{
      type: String,
      required:[true, " Please add the site name"]
