@@ -14,12 +14,12 @@ const userSchema = mongoose.Schema({
     type: String,
     required:[true, "please add the user password"]
    },
-   roles: {
-          type: String,
-          default: "user",
-          enum: ["user", "admin", "superadmin"]
-        
-      }
+   role: {
+    type: String,
+    enum: ['admin', 'manager', 'editor', 'viewer'],
+    default: 'viewer',
+  },
+  
 },{
  timestamps:true,
 }
