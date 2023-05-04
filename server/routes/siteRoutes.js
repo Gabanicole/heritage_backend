@@ -1,6 +1,6 @@
 const express = require ('express')
 const router = express.Router();
-const {getSites,createSite, getSite,updateSite,deleteSite} = require("../controllers/siteController")
+const {getSites,createSite, getSite,updateSite,deleteSite} = require("../../controllers/siteController")
 
 router.route( "/").get (getSites).post (createSite);
 
