@@ -1,77 +1,150 @@
-const asyncHandler = require("express-async-handler");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const passport = require("passport");
 const User = require("../models/userModel");
+// const { SECRET } = require("../config");
 
-//@desc Register a user
-//@route POST /api/users/register
-//@access public
-const registerUser = asyncHandler(async (req, res) => {
-  const { name, email, password } = req.body;
-  if (!name || !email || !password ) {
-    res.status(400);
-    throw new Error("All fields are mandatory!");
-  }
-  const userAvailable = await User.findOne({ email });
-  if (userAvailable) {
-    res.status(400);
-    throw new Error("User already registered!");
-  }
 
-  //Hash password
-  const hashedPassword = await bcrypt.hash(password, 10);
-  console.log("Hashed Password: ", hashedPassword);
-  const user = await User.create({
-    name,
-    email,
-    password: hashedPassword,
-  });
+// @DESC To register the user (ADMIN, SUPER_ADMIN, USER)
+ 
+const userRegister = async (userDets, role, res) => {
+  try {
+    // Validate the username
+    let usernameNotTaken = await validateUsername(userDets.name);
+    if (!usernameNotTaken) {
+      return res.status(400).json({
+        message: `name is already taken.`,
+        success: false
+      });
+    }
 
-  console.log(`User created ${user}`);
-  if (user) {
-    res.status(201).json({ _id: user.id, email: user.email });
-  } else {
-    res.status(400);
-    throw new Error("User data us not valid");
-  }
-  res.json({ message: "Register the user" });
-});
+    // validate the email
+    let emailNotRegistered = await validateEmail(userDets.email);
+    if (!emailNotRegistered) {
+      return res.status(400).json({
+        message: `Email is already registered.`,
+        success: false
+      });
+    }
 
-//@desc Login user
-//@route POST /api/users/login
-//@access public
-const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    res.status(400);
-    throw new Error("All fields are mandatory!");
+    // Get the hashed password
+    const password = await bcrypt.hash(userDets.password, 12);
+    // create a new user
+    const newUser = new User({
+      ...userDets,
+      password,
+      role
+    });
+
+    await newUser.save();
+    return res.status(201).json({
+      message: "Hurry! now you are successfully registred. Please nor login.",
+      success: true
+    });
+  } catch (err) {
+    // Implement logger function (winston)
+    return res.status(500).json({
+      message: "Unable to create your account.",
+      success: false
+    });
   }
-  const user = await User.findOne({ email });
-  //compare password with hashedpassword
-  if (user && (await bcrypt.compare(password, user.password))) {
-    const accessToken = jwt.sign(
+};
+
+/**
+ * @DESC To Login the user (ADMIN, SUPER_ADMIN, USER)
+ */
+const userLogin = async (userCreds, role, res) => {
+  let { username, password } = userCreds;
+  // First Check if the username is in the database
+  const user = await User.findOne({ username });
+  if (!user) {
+    return res.status(404).json({
+      message: "Username is not found. Invalid login credentials.",
+      success: false
+    });
+  }
+  // We will check the role
+  if (user.role !== role) {
+    return res.status(403).json({
+      message: "Please make sure you are logging in from the right portal.",
+      success: false
+    });
+  }
+  // That means user is existing and trying to signin fro the right portal
+  // Now check for the password
+  let isMatch = await bcrypt.compare(password, user.password);
+  if (isMatch) {
+    // Sign in the token and issue it to the user
+    let token = jwt.sign(
       {
-        user: {
-          name: user.name,
-          email: user.email,
-          id: user.id,
-        },
+        user_id: user._id,
+        role: user.role,
+        username: user.username,
+        email: user.email
       },
-      process.env.ACCESS_TOKEN_SECERT,
-      { expiresIn: "15m" }
+      SECRET,
+      { expiresIn: "7 days" }
     );
-    res.status(200).json({ accessToken });
+
+    let result = {
+      username: user.username,
+      role: user.role,
+      email: user.email,
+      token: `Bearer ${token}`,
+      expiresIn: 168
+    };
+
+    return res.status(200).json({
+      ...result,
+      message: "Hurray! You are now logged in.",
+      success: true
+    });
   } else {
-    res.status(401);
-    throw new Error("email or password is not valid");
+    return res.status(403).json({
+      message: "Incorrect password.",
+      success: false
+    });
   }
-});
+};
 
-//@desc Current user info
-//@route POST /api/users/current
-//@access private
-const currentUser = asyncHandler(async (req, res) => {
-  res.json(req.user);
-});
+const validateUsername = async username => {
+  let user = await User.findOne({ username });
+  return user ? false : true;
+};
 
-module.exports = { registerUser, loginUser, currentUser };
+/**
+ * @DESC Passport middleware
+ */
+const userAuth = passport.authenticate("jwt", { session: false });
+
+/**
+ * @DESC Check Role Middleware
+ */
+const checkRole = roles => (req, res, next) =>
+  !roles.includes(req.user.role)
+    ? res.status(401).json("Unauthorized")
+    : next();
+
+const validateEmail = async email => {
+  let user = await User.findOne({ email });
+  return user ? false : true;
+};
+
+const serializeUser = user => {
+  return {
+    username: user.username,
+    email: user.email,
+    name: user.name,
+    _id: user._id,
+    updatedAt: user.updatedAt,
+    createdAt: user.createdAt
+  };
+};
+
+module.exports = {
+  userAuth,
+  checkRole,
+  userLogin,
+  userRegister,
+  serializeUser
+};
